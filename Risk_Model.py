@@ -1,7 +1,7 @@
-import pandas as pd
+import streamlit as st
 
-# Data Processing
-patient_data = pd.read_csv('patients.csv')
-diagnoses_data = pd.read_csv('diagnoses.csv')
-outcome_data = pd.read_csv('outcomes.csv')
-lab_data = pd.read_csv('labs.csv')
+st.title("Healthcare Risk Stratification App")
+
+st.success("App deployed successfully")
+
+st.write("Testing successful")
