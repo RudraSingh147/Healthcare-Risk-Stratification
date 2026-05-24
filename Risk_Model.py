@@ -22,10 +22,10 @@ treatment_cost = st.number_input(
 
 if st.button("Predict"):
 
-    input_data = pd.DataFrame(
-        [[age, length_of_stay, treatment_cost]],
-        columns=['Age','LengthOfStay','TreatmentCost']
-    )
+   input_data = pd.DataFrame(
+    [[age, treatment_cost, 0]],
+    columns=['Age', 'TreatmentCost', 'AbnormalLabCount']
+)
 
     prediction = model.predict(input_data)[0]
 
