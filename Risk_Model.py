@@ -22,10 +22,10 @@ treatment_cost = st.number_input(
 
 if st.button("Predict"):
 
-   input_data = pd.DataFrame(
-    [[age, treatment_cost, 0]],
-    columns=['Age', 'TreatmentCost', 'AbnormalLabCount']
-)
+    input_data = pd.DataFrame(
+        [[age, treatment_cost, 0]],
+        columns=['Age', 'TreatmentCost', 'AbnormalLabCount']
+    )
 
     prediction = model.predict(input_data)[0]
 
@@ -36,7 +36,7 @@ if st.button("Predict"):
     else:
         st.success("Low Risk Patient")
 
-    if hasattr(model,'predict_proba'):
+    if hasattr(model, "predict_proba"):
         probability = model.predict_proba(input_data)[0][1]
         st.write(
             f"Risk Probability: {probability*100:.2f}%"
