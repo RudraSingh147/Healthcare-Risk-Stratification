@@ -261,44 +261,65 @@ def gauge_svg(pct, color):
 </svg></div>"""
 
 def waterfall_chart(age, cost, abn_cnt, prob):
-items = [
-("Age", 0.12726 * age),
-("Treatment Cost", 0.000179 * cost),
-("Abnormal Labs", 0.32716 * abn_cnt),
-("Base Risk", -10.8954)
-]
+    items = [
+        ("Age", 0.12726 * age),
+        ("Treatment Cost", 0.000179 * cost),
+        ("Abnormal Labs", 0.32716 * abn_cnt),
+        ("Base Risk", -10.8954)
+    ]
 
-```
-vals = [v for _, v in items]
-labels = [l for l, _ in items] + ["Risk Score"]
+    vals = [v for _, v in items]
+    labels = [l for l, _ in items] + ["Risk Score"]
 
-bottoms = []
-running = 0
+    bottoms = []
+    running = 0
 
-for v in vals:
-    bottoms.append(min(running, running + v))
-    running += v
+    for v in vals:
+        bottoms.append(min(running, running + v))
+        running += v
 
-colors = [
-    "#4E79A7" if v >= 0 else "#E15759"
-    for v in vals
-]
+    colors = [
+        "#4E79A7" if v >= 0 else "#E15759"
+        for v in vals
+    ]
 
-final_color = (
-    "#D62728" if prob >= 0.60
-    else "#F28E2B" if prob >= 0.30
-    else "#59A14F"
-)
+    final_color = (
+        "#D62728" if prob >= 0.60
+        else "#F28E2B" if prob >= 0.30
+        else "#59A14F"
+    )
 
-fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(12, 6))
 
-# Contribution bars
-for i, (b, v, c) in enumerate(zip(bottoms, vals, colors)):
+    for i, (b, v, c) in enumerate(zip(bottoms, vals, colors)):
+        ax.bar(
+            i,
+            abs(v),
+            bottom=b,
+            color=c,
+            width=0.7,
+            edgecolor="white",
+            linewidth=1.5,
+            zorder=3
+        )
+
+        ax.text(
+            i,
+            b + abs(v) + 0.15,
+            f"{v:+.2f}",
+            ha="center",
+            fontsize=10,
+            fontweight="bold",
+            color=c
+        )
+
+    final_score = sum(vals)
+
     ax.bar(
-        i,
-        abs(v),
-        bottom=b,
-        color=c,
+        len(vals),
+        abs(final_score),
+        bottom=min(final_score, 0),
+        color=final_color,
         width=0.7,
         edgecolor="white",
         linewidth=1.5,
@@ -306,82 +327,46 @@ for i, (b, v, c) in enumerate(zip(bottoms, vals, colors)):
     )
 
     ax.text(
-        i,
-        b + abs(v) + 0.15,
-        f"{v:+.2f}",
+        len(vals),
+        abs(final_score) + min(final_score, 0) + 0.3,
+        f"{final_score:.2f}",
         ha="center",
-        fontsize=10,
+        fontsize=11,
         fontweight="bold",
-        color=c
+        color=final_color
     )
 
-final_score = sum(vals)
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels, fontsize=11, rotation=15)
 
-# Final risk score bar
-ax.bar(
-    len(vals),
-    abs(final_score),
-    bottom=min(final_score, 0),
-    color=final_color,
-    width=0.7,
-    edgecolor="white",
-    linewidth=1.5,
-    zorder=3
-)
+    ax.axhline(y=0, color="#BDBDBD", linewidth=1)
 
-ax.text(
-    len(vals),
-    abs(final_score) + min(final_score, 0) + 0.3,
-    f"{final_score:.2f}",
-    ha="center",
-    fontsize=11,
-    fontweight="bold",
-    color=final_color
-)
+    ax.grid(axis="y", linestyle="--", alpha=0.35)
 
-ax.set_xticks(range(len(labels)))
-ax.set_xticklabels(
-    labels,
-    fontsize=11,
-    rotation=15
-)
+    ax.set_ylabel(
+        "Log-Odds Contribution",
+        fontsize=11,
+        fontweight="bold"
+    )
 
-ax.axhline(
-    y=0,
-    color="#BDBDBD",
-    linewidth=1
-)
+    ax.set_title(
+        "Risk Score Breakdown",
+        fontsize=16,
+        fontweight="bold",
+        pad=15
+    )
 
-ax.grid(
-    axis="y",
-    linestyle="--",
-    alpha=0.35
-)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 
-ax.set_ylabel(
-    "Log-Odds Contribution",
-    fontsize=11,
-    fontweight="bold"
-)
+    ax.set_facecolor("#FAFAFA")
+    fig.patch.set_facecolor("white")
 
-ax.set_title(
-    "Risk Score Breakdown",
-    fontsize=16,
-    fontweight="bold",
-    pad=15
-)
+    ax.margins(x=0.12)
 
-ax.spines["top"].set_visible(False)
-ax.spines["right"].set_visible(False)
+    plt.tight_layout()
 
-ax.set_facecolor("#FAFAFA")
-fig.patch.set_facecolor("white")
-
-ax.margins(x=0.12)
-
-plt.tight_layout()
-
-return fig
+    return fig
 
 def risk_trend_chart(history):
     if len(history) < 2:
