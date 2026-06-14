@@ -261,33 +261,127 @@ def gauge_svg(pct, color):
 </svg></div>"""
 
 def waterfall_chart(age, cost, abn_cnt, prob):
-    items  = [("Age", 0.12726 * age), ("Treatment Cost", 0.000179 * cost),
-              ("Abnormal Labs", 0.32716 * abn_cnt), ("Intercept", -10.8954)]
-    vals   = [v for _, v in items]
-    labels = [l for l, _ in items] + ["Risk Score"]
-    bottoms, s = [], 0
-    for v in vals:
-        bottoms.append(min(s, s + v)); s += v
-    colors = ["#378ADD" if v >= 0 else "#E24B4A" for v in vals]
-    fc = "#A32D2D" if prob >= 0.6 else "#BA7517" if prob >= 0.3 else "#3B6D11"
-    fig, ax = plt.subplots(figsize=(6, 3))
-    for i, (b, v, c) in enumerate(zip(bottoms, vals, colors)):
-        ax.bar(i, abs(v), bottom=b, color=c, width=0.55, zorder=3)
-        ax.text(i, b + abs(v) * (1 if v >= 0 else -1) * 0.05 + (0.2 if v >= 0 else -0.4),
-                f"+{v:.2f}" if v >= 0 else f"{v:.2f}",
-                ha="center", fontsize=8, color=c, fontweight="600")
-    final = sum(vals)
-    ax.bar(4, abs(final), bottom=min(final, 0), color=fc, width=0.55, zorder=3)
-    ax.text(4, abs(final) + min(final, 0) + 0.2, f"{final:.2f}",
-            ha="center", fontsize=8, fontweight="700", color=fc)
-    ax.set_xticks(range(5)); ax.set_xticklabels(labels, fontsize=8)
-    ax.axhline(0, color="#ccc", linewidth=0.8)
-    ax.set_ylabel("Log-odds", fontsize=8)
-    ax.set_title("Risk score breakdown (SHAP-style)", fontsize=9)
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.set_facecolor("#fafafa"); fig.patch.set_facecolor("#fafafa")
-    plt.tight_layout()
-    return fig
+items = [
+("Age", 0.12726 * age),
+("Treatment Cost", 0.000179 * cost),
+("Abnormal Labs", 0.32716 * abn_cnt),
+("Base Risk", -10.8954)
+]
+
+```
+vals = [v for _, v in items]
+labels = [l for l, _ in items] + ["Risk Score"]
+
+bottoms = []
+running = 0
+
+for v in vals:
+    bottoms.append(min(running, running + v))
+    running += v
+
+colors = [
+    "#4E79A7" if v >= 0 else "#E15759"
+    for v in vals
+]
+
+final_color = (
+    "#D62728" if prob >= 0.60
+    else "#F28E2B" if prob >= 0.30
+    else "#59A14F"
+)
+
+fig, ax = plt.subplots(figsize=(12, 6))
+
+# Contribution bars
+for i, (b, v, c) in enumerate(zip(bottoms, vals, colors)):
+    ax.bar(
+        i,
+        abs(v),
+        bottom=b,
+        color=c,
+        width=0.7,
+        edgecolor="white",
+        linewidth=1.5,
+        zorder=3
+    )
+
+    ax.text(
+        i,
+        b + abs(v) + 0.15,
+        f"{v:+.2f}",
+        ha="center",
+        fontsize=10,
+        fontweight="bold",
+        color=c
+    )
+
+final_score = sum(vals)
+
+# Final risk score bar
+ax.bar(
+    len(vals),
+    abs(final_score),
+    bottom=min(final_score, 0),
+    color=final_color,
+    width=0.7,
+    edgecolor="white",
+    linewidth=1.5,
+    zorder=3
+)
+
+ax.text(
+    len(vals),
+    abs(final_score) + min(final_score, 0) + 0.3,
+    f"{final_score:.2f}",
+    ha="center",
+    fontsize=11,
+    fontweight="bold",
+    color=final_color
+)
+
+ax.set_xticks(range(len(labels)))
+ax.set_xticklabels(
+    labels,
+    fontsize=11,
+    rotation=15
+)
+
+ax.axhline(
+    y=0,
+    color="#BDBDBD",
+    linewidth=1
+)
+
+ax.grid(
+    axis="y",
+    linestyle="--",
+    alpha=0.35
+)
+
+ax.set_ylabel(
+    "Log-Odds Contribution",
+    fontsize=11,
+    fontweight="bold"
+)
+
+ax.set_title(
+    "Risk Score Breakdown",
+    fontsize=16,
+    fontweight="bold",
+    pad=15
+)
+
+ax.spines["top"].set_visible(False)
+ax.spines["right"].set_visible(False)
+
+ax.set_facecolor("#FAFAFA")
+fig.patch.set_facecolor("white")
+
+ax.margins(x=0.12)
+
+plt.tight_layout()
+
+return fig
 
 def risk_trend_chart(history):
     if len(history) < 2:
