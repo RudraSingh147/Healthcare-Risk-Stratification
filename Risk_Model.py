@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import pdfplumber, re, joblib, os, io
+import pdfplumber, re, joblib, os, io, csv, hashlib, secrets
 from datetime import date, datetime
 
 # ── Page config ────────────────────────────────────────────────────────────────
@@ -11,6 +11,110 @@ st.set_page_config(
     page_icon="🏥",
     layout="wide",
 )
+st.markdown("""
+<style>
+
+/* Hide Deploy button */
+[data-testid="stToolbar"] {
+    display: none !important;
+}
+
+/* Hide top header */
+[data-testid="stHeader"] {
+    display: none !important;
+}
+
+/* Hide menu */
+#MainMenu {
+    visibility: hidden !important;
+}
+
+/* Hide footer */
+footer {
+    visibility: hidden !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTH — CSV-based user store with SHA-256 hashed passwords
+# ══════════════════════════════════════════════════════════════════════════════
+USERS_CSV   = os.path.join(os.path.dirname(__file__), "users.csv")
+USER_FIELDS = ["username", "email", "password_hash", "role", "created_at", "active"]
+
+def _hash_password(password: str, salt: str = None) -> str:
+    if salt is None:
+        salt = secrets.token_hex(16)
+    h = hashlib.sha256((salt + password).encode()).hexdigest()
+    return f"{salt}${h}"
+
+def _verify_password(password: str, stored: str) -> bool:
+    try:
+        salt, _ = stored.split("$", 1)
+        return _hash_password(password, salt) == stored
+    except Exception:
+        return False
+
+def _load_users() -> dict:
+    if not os.path.exists(USERS_CSV):
+        return {}
+    with open(USERS_CSV, newline="", encoding="utf-8") as f:
+        return {row["username"]: row for row in csv.DictReader(f)}
+
+def _save_user(username: str, email: str, password: str, role: str):
+    users = _load_users()
+    if username in users:
+        return False, "Username already exists."
+    if any(u["email"] == email for u in users.values()):
+        return False, "Email already registered."
+    new_file = not os.path.exists(USERS_CSV)
+    with open(USERS_CSV, "a", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=USER_FIELDS)
+        if new_file:
+            w.writeheader()
+        w.writerow({
+            "username":      username,
+            "email":         email,
+            "password_hash": _hash_password(password),
+            "role":          role,
+            "created_at":    datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "active":        "true",
+        })
+    return True, "Account created successfully."
+
+def _validate_password(pw: str):
+    rules = []
+    if len(pw) < 8:                      rules.append("At least 8 characters")
+    if not any(c.isupper() for c in pw): rules.append("One uppercase letter")
+    if not any(c.isdigit() for c in pw): rules.append("One number")
+    return rules
+
+def _authenticate_by_email(email: str, password: str):
+    users = _load_users()
+
+    for user in users.values():
+        if user.get("email", "").lower() == email.lower():
+            if user.get("active") == "true" and _verify_password(password, user["password_hash"]):
+                return user
+            return None
+
+    return None
+
+def _seed_default_users():
+    users = _load_users()
+    if "admin"   not in users: _save_user("admin",   "admin@hospital.com", "Admin@123",  "Admin")
+    if "drsmith" not in users: _save_user("drsmith", "smith@hospital.com", "Doctor@123", "Doctor")
+
+_seed_default_users()
+
+# ── Session state ──────────────────────────────────────────────────────────────
+if "logged_in"    not in st.session_state: st.session_state.logged_in    = False
+if "username"     not in st.session_state: st.session_state.username     = ""
+if "role"         not in st.session_state: st.session_state.role         = ""
+if "auth_page"    not in st.session_state: st.session_state.auth_page    = "login"
+if "auth_msg"     not in st.session_state: st.session_state.auth_msg     = None
+if "registry"     not in st.session_state: st.session_state.registry     = []
+if "risk_history" not in st.session_state: st.session_state.risk_history = []
 
 # ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -19,22 +123,11 @@ st.markdown("""
    HOSPITAL-THEMED BACKGROUND
    ════════════════════════════════════════════════════════════ */
 
-/* Main background: soft medical blue + subtle grid cross pattern */
 .stApp {
-    background-color: #e8f4fd;
-    background-image:
-        radial-gradient(ellipse at 8%  8%,  rgba(0,119,182,0.18) 0%, transparent 50%),
-        radial-gradient(ellipse at 92% 92%, rgba(0,180,216,0.14) 0%, transparent 50%),
-        radial-gradient(ellipse at 85% 10%, rgba(2,62,138,0.08)  0%, transparent 40%),
-        repeating-linear-gradient(
-            0deg,  transparent, transparent 28px,
-            rgba(0,119,182,0.055) 28px, rgba(0,119,182,0.055) 32px),
-        repeating-linear-gradient(
-            90deg, transparent, transparent 28px,
-            rgba(0,119,182,0.055) 28px, rgba(0,119,182,0.055) 32px);
+    background: #e8f4fd;
 }
 
-/* Sidebar: deep navy-to-cyan medical gradient */
+
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #023e8a 0%, #0077b6 65%, #00b4d8 100%) !important;
     border-right: 3px solid #90e0ef;
@@ -46,7 +139,6 @@ st.markdown("""
     50%       { transform: scale(1.08); opacity: 0.85; }
 }
 
-/* Main content: frosted-glass card */
 .block-container {
     background: rgba(255,255,255,0.55) !important;
     backdrop-filter: blur(4px);
@@ -57,7 +149,6 @@ st.markdown("""
     padding-bottom: 2rem;
 }
 
-/* Tabs: pill style */
 .stTabs [data-baseweb="tab-list"] {
     background: rgba(255,255,255,0.70);
     border-radius: 10px;
@@ -76,7 +167,6 @@ st.markdown("""
     color: #ffffff !important;
 }
 
-/* Metric cards: frosted glass */
 [data-testid="stMetric"] {
     background: rgba(255,255,255,0.82) !important;
     backdrop-filter: blur(6px);
@@ -88,7 +178,6 @@ st.markdown("""
 [data-testid="stMetricLabel"] { color: #023e8a !important; font-weight: 600; }
 [data-testid="stMetricValue"] { color: #0077b6 !important; }
 
-/* Buttons: navy gradient */
 .stButton > button {
     background: linear-gradient(90deg, #023e8a, #0077b6) !important;
     color: #ffffff !important;
@@ -103,26 +192,65 @@ st.markdown("""
     box-shadow: 0 6px 18px rgba(0,119,182,0.42) !important;
 }
 
-/* Headings */
 h1, h2 { color: #023e8a !important; }
 h3      { color: #0077b6 !important; }
+hr      { border-color: rgba(0,119,182,0.22) !important; }
 
-/* Divider */
-hr { border-color: rgba(0,119,182,0.22) !important; }
-
-/* DataFrames */
 [data-testid="stDataFrame"] {
     background: rgba(255,255,255,0.88) !important;
     border-radius: 10px;
     border: 1px solid rgba(0,119,182,0.14);
 }
-
-/* Inputs / selects */
 [data-testid="stNumberInput"] > div,
 [data-testid="stSelectbox"]   > div {
     background: rgba(255,255,255,0.80) !important;
     border-radius: 8px;
 }
+
+/* ════════════════════════════════════════════════════════════
+   AUTH CARD
+   ════════════════════════════════════════════════════════════ */
+.auth-card {
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(12px);
+    border-radius: 20px;
+    padding: 2.8rem 3rem;
+    box-shadow: 0 8px 40px rgba(2,62,138,0.18);
+    border: 1px solid rgba(0,119,182,0.18);
+    width: 100%;
+    max-width: 420px;
+}
+.auth-logo  { font-size:3.2rem; text-align:center; margin-bottom:.4rem; }
+.auth-title { font-size:1.55rem; font-weight:800; color:#023e8a !important;
+              text-align:center; margin-bottom:.15rem; }
+.auth-sub   { font-size:.83rem; color:#6b7280; text-align:center; margin-bottom:1.8rem; }
+.auth-hint  {
+    background: rgba(0,119,182,0.08);
+    border: 1px solid rgba(0,119,182,0.18);
+    border-radius: 10px;
+    padding: .75rem 1rem;
+    font-size: .78rem;
+    color: #023e8a;
+    margin-top: 1rem;
+}
+
+/* ════════════════════════════════════════════════════════════
+   TOP-BAR
+   ════════════════════════════════════════════════════════════ */
+.topbar {
+    display:flex; justify-content:space-between; align-items:center;
+    background: linear-gradient(90deg,rgba(2,62,138,0.10),rgba(0,119,182,0.07));
+    border: 1px solid rgba(0,119,182,0.16);
+    border-radius: 12px;
+    padding: .65rem 1.2rem;
+    margin-bottom: 1rem;
+}
+.topbar-title { font-size:1.15rem; font-weight:700; color:#023e8a; }
+.topbar-user  { font-size:.85rem; color:#0077b6; }
+.role-pill    { display:inline-block; padding:3px 12px; border-radius:99px;
+                font-size:.74rem; font-weight:700; margin-left:6px; }
+.pill-admin  { background:#fce8e8; color:#b91c1c; }
+.pill-doctor { background:#e8f2fc; color:#023e8a; }
 
 /* ════════════════════════════════════════════════════════════
    ORIGINAL COMPONENT STYLES (unchanged)
@@ -154,6 +282,161 @@ hr { border-color: rgba(0,119,182,0.22) !important; }
 .lab-range{font-size:.75rem;color:#999}
 </style>
 """, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTH PAGES
+# ══════════════════════════════════════════════════════════════════════════════
+def show_login():
+    _, col, _ = st.columns([1, 1.3, 1])
+
+    with col:
+        st.markdown("""
+        <div class="auth-card">
+          <div class="auth-logo">🏥</div>
+          <div class="auth-title">Welcome Back</div>
+          <div class="auth-sub">Healthcare Risk Stratification System</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Show authentication messages
+        if st.session_state.get("auth_msg"):
+            msg_type, msg_text = st.session_state.auth_msg
+
+            if msg_type == "success":
+                st.success(msg_text)
+            elif msg_type == "error":
+                st.error(msg_text)
+            elif msg_type == "info":
+                st.info(msg_text)
+
+            st.session_state.auth_msg = None
+
+        with st.form("login_form"):
+
+            email = st.text_input(
+                "📧 Email Address",
+                placeholder="Enter your registered email"
+            )
+
+            password = st.text_input(
+                "🔒 Password",
+                placeholder="Enter password",
+                type="password"
+            )
+
+            submitted = st.form_submit_button(
+            "🔐 Sign In",
+            use_container_width=True,
+            type="primary"
+        )
+
+    if submitted:
+
+        if not email or not password:
+            st.error("Please enter both email and password.")
+
+        else:
+            user = _authenticate_by_email(
+                email.strip(),
+                password
+            )
+
+            if user:
+                st.session_state.logged_in = True
+                st.session_state.username = user["username"]
+                st.session_state.role = user["role"]
+
+                st.session_state.auth_msg = (
+                    "success",
+                    f"Welcome back, {user['username']}!"
+                )
+
+                st.rerun()
+
+            else:
+                st.error("❌ Invalid email or password.")
+
+    st.markdown("---")
+
+    if st.button(
+        "📝 Don't have an account? Register here",
+        use_container_width=True
+    ):
+        st.session_state.auth_page = "register"
+        st.rerun()
+
+def show_register():
+    _, col, _ = st.columns([1, 1.3, 1])
+    with col:
+        st.markdown("""
+        <div class="auth-card">
+          <div class="auth-logo">📝</div>
+          <div class="auth-title">Create Account</div>
+          <div class="auth-sub">Register to access the system</div>
+        </div>""", unsafe_allow_html=True)
+
+        with st.form("register_form"):
+            nu_user  = st.text_input("👤 Username",         placeholder="Choose a username")
+            nu_email = st.text_input("📧 Email",             placeholder="your@email.com")
+            nu_role  = st.selectbox("🎭 Role",              ["Doctor", "Admin"])
+            nu_pass  = st.text_input("🔒 Password",         placeholder="Min 8 chars, 1 upper, 1 number", type="password")
+            nu_pass2 = st.text_input("🔒 Confirm password", placeholder="Repeat password", type="password")
+            submitted = st.form_submit_button("✅ Create account", use_container_width=True, type="primary")
+
+        if submitted:
+            errors = []
+            if not all([nu_user, nu_email, nu_pass, nu_pass2]):
+                errors.append("All fields are required.")
+            if nu_pass != nu_pass2:
+                errors.append("Passwords do not match.")
+            errors += _validate_password(nu_pass)
+            if errors:
+                for e in errors: st.error(e)
+            else:
+                ok, msg = _save_user(nu_user.strip(), nu_email.strip(), nu_pass, nu_role)
+                if ok:
+                    st.success(f"✅ {msg} Please sign in.")
+                    st.session_state.auth_page = "login"
+                    st.rerun()
+                else:
+                    st.error(f"❌ {msg}")
+
+        st.markdown("---")
+        if st.button("← Back to login", use_container_width=True):
+            st.session_state.auth_page = "login"
+            st.rerun()
+
+
+# ── Route to auth if not logged in ────────────────────────────────────────────
+if not st.session_state.logged_in:
+    if st.session_state.auth_page == "register":
+        show_register()
+    else:
+        show_login()
+    st.stop()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTHENTICATED APP STARTS HERE
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Top bar ────────────────────────────────────────────────────────────────────
+role_html = (
+    '<span class="role-pill pill-admin">⚙️ Admin</span>'
+    if st.session_state.role == "Admin"
+    else '<span class="role-pill pill-doctor">🩺 Doctor</span>'
+)
+tb_col, lo_col = st.columns([5, 1])
+with tb_col:
+    st.markdown(
+        f'<div class="topbar">'
+        f'<span class="topbar-title">🏥 Healthcare Risk Stratification</span>'
+        f'<span class="topbar-user">👤 {st.session_state.username}{role_html}</span>'
+        f'</div>', unsafe_allow_html=True)
+with lo_col:
+    if st.button("🚪 Logout", use_container_width=True):
+        for k in ["logged_in", "username", "role", "registry", "risk_history"]:
+            st.session_state.pop(k, None)
+        st.rerun()
 
 # ── Model ──────────────────────────────────────────────────────────────────────
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "Risk_model1.pkl")
@@ -348,10 +631,6 @@ def check_labs(vals, gender="M"):
         else:          norm.append((lab, val, lo, hi))
     return abn, norm
 
-# ── Session state ──────────────────────────────────────────────────────────────
-if "registry"     not in st.session_state: st.session_state.registry     = []
-if "risk_history" not in st.session_state: st.session_state.risk_history = []
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def gauge_svg(pct, color):
     dash = round(2.827 * min(pct, 100))
@@ -438,16 +717,31 @@ def population_percentile(age, cost, abn):
     return pctile
 
 # ══════════════════════════════════════════════════════════════════════════════
+# TABS — Admin gets extra User Management tab
+# ══════════════════════════════════════════════════════════════════════════════
 st.markdown("## 🏥 Healthcare Risk Stratification System")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "🔬 Prediction",
-    "📄 Lab Report Analyzer",
-    "👥 Patient Registry",
-    "📊 Dashboard",
-    "📁 Batch Prediction",
-    "🔮 What-If Simulator",
-])
+is_admin = st.session_state.role == "Admin"
+
+if is_admin:
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "🔬 Prediction",
+        "📄 Lab Report Analyzer",
+        "👥 Patient Registry",
+        "📊 Dashboard",
+        "📁 Batch Prediction",
+        "🔮 What-If Simulator",
+        "⚙️ User Management",
+    ])
+else:
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "🔬 Prediction",
+        "📄 Lab Report Analyzer",
+        "👥 Patient Registry",
+        "📊 Dashboard",
+        "📁 Batch Prediction",
+        "🔮 What-If Simulator",
+    ])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — Single Prediction
@@ -551,6 +845,7 @@ with tab1:
                     "hgb": hgb, "vitd": vitd, "abn_cnt": abn_cnt,
                     "risk_pct": round(pct, 1), "risk_level": lvl,
                     "datetime": datetime.now(),
+                    "saved_by": st.session_state.username,
                 }
                 st.session_state.registry.append(rec_entry)
                 st.session_state.risk_history.append({
@@ -562,6 +857,7 @@ with tab1:
             report = f"""HEALTHCARE RISK STRATIFICATION REPORT
 ======================================
 Date/Time    : {datetime.now().strftime('%Y-%m-%d %H:%M')}
+Recorded by  : {st.session_state.username} ({st.session_state.role})
 Patient      : {pat_name or 'N/A'}
 Diagnosis    : {diag} | Gender: {gender} | Age: {age}
 Risk Level   : {lvl} | Probability: {pct:.1f}%
@@ -832,7 +1128,7 @@ with tab3:
                 ec1.markdown(f"**LOS:** {r['los']} days &nbsp; **Cost:** ₹{r['cost']:,}")
                 ec2.markdown(f"**BP:** {r['bp']} | **BS:** {r['bs']} | **Chol:** {r['chol']}")
                 ec2.markdown(f"**Creatinine:** {r['cr']} | **Hgb:** {r['hgb']} | **Vit D:** {r['vitd']}")
-                st.caption(f"Abnormal labs: {r['abn_cnt']}/6 · Saved: {r['datetime'].strftime('%d %b %Y %H:%M')}")
+                st.caption(f"Abnormal labs: {r['abn_cnt']}/6 · Saved by: {r.get('saved_by', '—')} · {r['datetime'].strftime('%d %b %Y %H:%M')}")
 
         if len(st.session_state.risk_history) >= 2:
             st.divider()
@@ -1010,10 +1306,56 @@ with tab6:
                 f'{"✓ Normal" if ok else "⚠ Abnormal"}</span>',
                 unsafe_allow_html=True)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 7 — User Management  (Admin only)
+# ══════════════════════════════════════════════════════════════════════════════
+if is_admin:
+    with tab7:
+        st.markdown("### ⚙️ User Management")
+        st.caption("View and manage all registered users. Visible to Admins only.")
+        all_users = _load_users()
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total users", len(all_users))
+        m2.metric("Admins",  sum(1 for u in all_users.values() if u["role"] == "Admin"))
+        m3.metric("Doctors", sum(1 for u in all_users.values() if u["role"] == "Doctor"))
+        m4.metric("Active",  sum(1 for u in all_users.values() if u.get("active") == "true"))
+        st.divider()
+        user_rows = [{"Username": u["username"], "Email": u["email"], "Role": u["role"],
+                      "Created": u.get("created_at", "—"),
+                      "Status": "✅ Active" if u.get("active") == "true" else "🔴 Inactive"}
+                     for u in all_users.values()]
+        st.dataframe(pd.DataFrame(user_rows), use_container_width=True, hide_index=True)
+        st.divider()
+        st.markdown("#### ➕ Add new user")
+        with st.form("admin_add_user"):
+            ac1, ac2 = st.columns(2)
+            nu_user  = ac1.text_input("Username")
+            nu_email = ac2.text_input("Email")
+            ac3, ac4 = st.columns(2)
+            nu_role  = ac3.selectbox("Role", ["Doctor", "Admin"])
+            nu_pass  = ac4.text_input("Password", type="password")
+            if st.form_submit_button("➕ Create user", type="primary"):
+                if not all([nu_user, nu_email, nu_pass]):
+                    st.error("All fields required.")
+                else:
+                    errs = _validate_password(nu_pass)
+                    if errs:
+                        for e in errs: st.error(e)
+                    else:
+                        ok, msg = _save_user(nu_user.strip(), nu_email.strip(), nu_pass, nu_role)
+                        st.success(f"✅ {msg}") if ok else st.error(f"❌ {msg}")
+                        st.rerun()
+        st.divider()
+        user_df = pd.DataFrame([{k: v for k, v in u.items() if k != "password_hash"}
+                                 for u in all_users.values()])
+        st.download_button("📥 Export user list CSV", user_df.to_csv(index=False),
+                           "users_export.csv", "text/csv", use_container_width=True)
+
 # ── Footer ─────────────────────────────────────────────────────────────────────
 st.divider()
 st.caption(
-    "Model: Logistic Regression · sklearn · "
-    "Features: Age, TreatmentCost, AbnormalLabCount · "
-    "For clinical decision support only — not a substitute for professional medical judgment."
+    f"Model: Logistic Regression · sklearn · "
+    f"Features: Age, TreatmentCost, AbnormalLabCount · "
+    f"Session: {st.session_state.username} ({st.session_state.role}) · "
+    f"For clinical decision support only — not a substitute for professional medical judgment."
 )
