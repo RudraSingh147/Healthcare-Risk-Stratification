@@ -15,9 +15,118 @@ st.set_page_config(
 # ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-.block-container{padding-top:1.2rem;padding-bottom:2rem}
-.stTabs [data-baseweb="tab-list"]{gap:6px}
-.stTabs [data-baseweb="tab"]{border-radius:8px;padding:6px 18px;font-weight:500}
+/* ════════════════════════════════════════════════════════════
+   HOSPITAL-THEMED BACKGROUND
+   ════════════════════════════════════════════════════════════ */
+
+/* Main background: soft medical blue + subtle grid cross pattern */
+.stApp {
+    background-color: #e8f4fd;
+    background-image:
+        radial-gradient(ellipse at 8%  8%,  rgba(0,119,182,0.18) 0%, transparent 50%),
+        radial-gradient(ellipse at 92% 92%, rgba(0,180,216,0.14) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 10%, rgba(2,62,138,0.08)  0%, transparent 40%),
+        repeating-linear-gradient(
+            0deg,  transparent, transparent 28px,
+            rgba(0,119,182,0.055) 28px, rgba(0,119,182,0.055) 32px),
+        repeating-linear-gradient(
+            90deg, transparent, transparent 28px,
+            rgba(0,119,182,0.055) 28px, rgba(0,119,182,0.055) 32px);
+}
+
+/* Sidebar: deep navy-to-cyan medical gradient */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #023e8a 0%, #0077b6 65%, #00b4d8 100%) !important;
+    border-right: 3px solid #90e0ef;
+}
+[data-testid="stSidebar"] * { color: #ffffff !important; }
+[data-testid="stSidebar"] img { animation: hb-pulse 2s ease-in-out infinite; }
+@keyframes hb-pulse {
+    0%, 100% { transform: scale(1);     opacity: 1;    }
+    50%       { transform: scale(1.08); opacity: 0.85; }
+}
+
+/* Main content: frosted-glass card */
+.block-container {
+    background: rgba(255,255,255,0.55) !important;
+    backdrop-filter: blur(4px);
+    border-radius: 16px;
+    border: 1px solid rgba(0,119,182,0.12);
+    box-shadow: 0 4px 24px rgba(0,119,182,0.08);
+    padding-top: 1.2rem;
+    padding-bottom: 2rem;
+}
+
+/* Tabs: pill style */
+.stTabs [data-baseweb="tab-list"] {
+    background: rgba(255,255,255,0.70);
+    border-radius: 10px;
+    padding: 4px;
+    gap: 4px;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 8px !important;
+    padding: 6px 18px;
+    font-weight: 600;
+    color: #023e8a !important;
+    background: transparent !important;
+}
+.stTabs [aria-selected="true"] {
+    background: linear-gradient(90deg, #023e8a, #0077b6) !important;
+    color: #ffffff !important;
+}
+
+/* Metric cards: frosted glass */
+[data-testid="stMetric"] {
+    background: rgba(255,255,255,0.82) !important;
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(0,119,182,0.18) !important;
+    border-radius: 12px !important;
+    padding: 14px 18px !important;
+    box-shadow: 0 2px 10px rgba(0,119,182,0.10);
+}
+[data-testid="stMetricLabel"] { color: #023e8a !important; font-weight: 600; }
+[data-testid="stMetricValue"] { color: #0077b6 !important; }
+
+/* Buttons: navy gradient */
+.stButton > button {
+    background: linear-gradient(90deg, #023e8a, #0077b6) !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 3px 10px rgba(0,119,182,0.28);
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.stButton > button:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 18px rgba(0,119,182,0.42) !important;
+}
+
+/* Headings */
+h1, h2 { color: #023e8a !important; }
+h3      { color: #0077b6 !important; }
+
+/* Divider */
+hr { border-color: rgba(0,119,182,0.22) !important; }
+
+/* DataFrames */
+[data-testid="stDataFrame"] {
+    background: rgba(255,255,255,0.88) !important;
+    border-radius: 10px;
+    border: 1px solid rgba(0,119,182,0.14);
+}
+
+/* Inputs / selects */
+[data-testid="stNumberInput"] > div,
+[data-testid="stSelectbox"]   > div {
+    background: rgba(255,255,255,0.80) !important;
+    border-radius: 8px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   ORIGINAL COMPONENT STYLES (unchanged)
+   ════════════════════════════════════════════════════════════ */
 .kpi{background:white;border:1px solid #e8eaf0;border-radius:12px;
      padding:.9rem 1.1rem;text-align:center;margin-bottom:.5rem}
 .kpi-num{font-size:2rem;font-weight:700;margin:4px 0}
@@ -58,7 +167,6 @@ model = load_model()
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-# ✅ BUG FIX: use DataFrame with named columns to avoid sklearn warning
 def predict_risk(age, cost, abn):
     if model:
         X = pd.DataFrame([[age, cost, abn]],
@@ -267,105 +375,32 @@ def waterfall_chart(age, cost, abn_cnt, prob):
         ("Abnormal Labs", 0.32716 * abn_cnt),
         ("Base Risk", -10.8954)
     ]
-
     vals = [v for _, v in items]
     labels = [l for l, _ in items] + ["Risk Score"]
-
     bottoms = []
     running = 0
-
     for v in vals:
         bottoms.append(min(running, running + v))
         running += v
-
-    colors = [
-        "#4E79A7" if v >= 0 else "#E15759"
-        for v in vals
-    ]
-
-    final_color = (
-        "#D62728" if prob >= 0.60
-        else "#F28E2B" if prob >= 0.30
-        else "#59A14F"
-    )
-
+    colors = ["#4E79A7" if v >= 0 else "#E15759" for v in vals]
+    final_color = ("#D62728" if prob >= 0.60 else "#F28E2B" if prob >= 0.30 else "#59A14F")
     fig, ax = plt.subplots(figsize=(12, 6))
-
     for i, (b, v, c) in enumerate(zip(bottoms, vals, colors)):
-        ax.bar(
-            i,
-            abs(v),
-            bottom=b,
-            color=c,
-            width=0.7,
-            edgecolor="white",
-            linewidth=1.5,
-            zorder=3
-        )
-
-        ax.text(
-            i,
-            b + abs(v) + 0.15,
-            f"{v:+.2f}",
-            ha="center",
-            fontsize=10,
-            fontweight="bold",
-            color=c
-        )
-
+        ax.bar(i, abs(v), bottom=b, color=c, width=0.7, edgecolor="white", linewidth=1.5, zorder=3)
+        ax.text(i, b + abs(v) + 0.15, f"{v:+.2f}", ha="center", fontsize=10, fontweight="bold", color=c)
     final_score = sum(vals)
-
-    ax.bar(
-        len(vals),
-        abs(final_score),
-        bottom=min(final_score, 0),
-        color=final_color,
-        width=0.7,
-        edgecolor="white",
-        linewidth=1.5,
-        zorder=3
-    )
-
-    ax.text(
-        len(vals),
-        abs(final_score) + min(final_score, 0) + 0.3,
-        f"{final_score:.2f}",
-        ha="center",
-        fontsize=11,
-        fontweight="bold",
-        color=final_color
-    )
-
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels(labels, fontsize=11, rotation=15)
-
+    ax.bar(len(vals), abs(final_score), bottom=min(final_score, 0), color=final_color,
+           width=0.7, edgecolor="white", linewidth=1.5, zorder=3)
+    ax.text(len(vals), abs(final_score) + min(final_score, 0) + 0.3, f"{final_score:.2f}",
+            ha="center", fontsize=11, fontweight="bold", color=final_color)
+    ax.set_xticks(range(len(labels))); ax.set_xticklabels(labels, fontsize=11, rotation=15)
     ax.axhline(y=0, color="#BDBDBD", linewidth=1)
-
     ax.grid(axis="y", linestyle="--", alpha=0.35)
-
-    ax.set_ylabel(
-        "Log-Odds Contribution",
-        fontsize=11,
-        fontweight="bold"
-    )
-
-    ax.set_title(
-        "Risk Score Breakdown",
-        fontsize=16,
-        fontweight="bold",
-        pad=15
-    )
-
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    ax.set_facecolor("#FAFAFA")
-    fig.patch.set_facecolor("white")
-
-    ax.margins(x=0.12)
-
-    plt.tight_layout()
-
+    ax.set_ylabel("Log-Odds Contribution", fontsize=11, fontweight="bold")
+    ax.set_title("Risk Score Breakdown", fontsize=16, fontweight="bold", pad=15)
+    ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+    ax.set_facecolor("#FAFAFA"); fig.patch.set_facecolor("white")
+    ax.margins(x=0.12); plt.tight_layout()
     return fig
 
 def risk_trend_chart(history):
@@ -379,8 +414,7 @@ def risk_trend_chart(history):
             marker="o", markersize=7, zorder=5)
     for i, r in enumerate(risks):
         ax.annotate(f"{r:.0f}%", (i, r), textcoords="offset points",
-                    xytext=(0, 9), ha="center", fontsize=8, fontweight="700",
-                    color="#A32D2D")
+                    xytext=(0, 9), ha="center", fontsize=8, fontweight="700", color="#A32D2D")
     ax.axhspan(0,  30,  alpha=0.05, color="#3B6D11")
     ax.axhspan(30, 60,  alpha=0.05, color="#BA7517")
     ax.axhspan(60, 100, alpha=0.05, color="#E24B4A")
